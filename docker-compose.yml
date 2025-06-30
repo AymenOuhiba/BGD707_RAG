@@ -1,0 +1,86 @@
+services:
+  # Service 1: Serveur Ollama pour l'exécution locale des modèles de langage
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama_server
+    ports:
+      # Port modifié : 11434 (conteneur) → 11435 (hôte) pour éviter les conflits potentiels
+      - "11435:11434"
+    volumes:
+      # Volume pour persister les modèles téléchargés
+      - ollama_data:/root/.ollama
+    networks:
+      - rag_network
+    environment: 
+      # Configuration des timeout pour les modèles volumineux
+      OLLAMA_LOAD_TIMEOUT: 10m0s 
+      OLLAMA_KEEP_ALIVE: 10m0s 
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    command: serve
+
+  # Service 2: PostgreSQL avec extension pgvector pour le stockage vectoriel
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: postgres_db
+    environment:
+      POSTGRES_DB: rag_db
+      POSTGRES_USER: aymen
+      POSTGRES_PASSWORD: aymen
+    ports:
+      # Port modifié : 5432 (conteneur) → 5434 (hôte)
+      - "5434:5432"
+    volumes:
+      # Volume pour persister les données vectorielles
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - rag_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rag_user -d rag_db"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # Service 3: Application RAG (Python)
+  rag-app:
+    build:
+      context: ./rag_app
+      dockerfile: Dockerfile
+    container_name: rag_application
+    environment:
+      # Configuration des accès aux autres services
+      POSTGRES_USER: rag_user
+      POSTGRES_PASSWORD: rag_password
+      POSTGRES_HOST: postgres_db  # Résolution DNS via le réseau Docker
+      POSTGRES_PORT: 5432         # Port interne du conteneur PostgreSQL
+      POSTGRES_DB: rag_db     
+      OLLAMA_BASE_URL: http://ollama_server:11434  # URL interne du service Ollama
+      LLM_MODEL: gemma3:4b
+      EMBEDDING_MODEL: nomic-embed-text:latest 
+    volumes:
+      # Montage du code Python pour développement itératif
+      - ./rag_app:/app
+    networks:
+      - rag_network
+    depends_on:
+      ollama:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    restart: on-failure
+
+# Déclaration des volumes persistants
+volumes:
+  ollama_data:
+    driver: local
+  postgres_data:
+    driver: local
+
+# Configuration du réseau isolé
+networks:
+  rag_network:
+    driver: bridge
