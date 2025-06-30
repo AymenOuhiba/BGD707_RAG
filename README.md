@@ -9,8 +9,6 @@ Ce projet propose une implémentation locale d’un système RAG (Retrieval-Augm
 git clone https://github.com/AymenOuhiba/BGD707_RAG/
 cd BGD707_RAG
 
-# Ajouter vos fichiers dans le dossier : rag_app/knowledge_base/
-
 # Démarrer les services
 docker-compose up --build -d
 
